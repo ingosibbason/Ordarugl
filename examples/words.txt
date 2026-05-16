@@ -1,0 +1,18 @@
+# Example word list — all words in nefnifall (nominative case).
+# Verbs are given in nafnháttur (infinitive) since they have no nominative form.
+Reykjavík
+Hjálpræði
+Hnappur
+Hraukur
+Huggun
+Kappglíma
+Kjaftagangur
+Kringlumýri
+Leturafbrigði
+Naumur
+Pappi
+Skarðsheiði
+Skoða
+Sneiða
+Sviðna
+Þýlyndi

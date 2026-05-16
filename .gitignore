@@ -19,5 +19,6 @@ env/
 .DS_Store
 Thumbs.db
 
-# Output (uncomment if you don't want to commit generated PDFs at the repo root)
-# *.pdf
+# Local working directories
+input/
+output/

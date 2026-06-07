@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="is">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Orðarugl</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Orðarugl</h1>
+      <p class="tagline">Búðu til þitt eigið íslenska orðarugl og prentaðu út sem PDF.</p>
+    </header>
+
+    <form id="form" novalidate>
+      <label class="field">
+        <span class="label">Titill</span>
+        <input type="text" id="title" name="title" value="Orðarugl" autocomplete="off" />
+      </label>
+
+      <label class="field">
+        <span class="label">Orð <span class="muted">(eitt í hverri línu — bil og bandstrik leyfileg)</span></span>
+        <textarea id="words" name="words" rows="10" autocomplete="off" spellcheck="false"
+                  placeholder="REYKJAVÍK&#10;HRAUN&#10;JÖKULL"></textarea>
+        <span id="word-count" class="word-count" aria-live="polite">0 orð</span>
+      </label>
+
+      <fieldset class="field difficulty">
+        <legend class="label">Erfiðleiki</legend>
+        <label>
+          <input type="radio" name="difficulty" value="easy" />
+          <span class="difficulty-text">
+            <span class="difficulty-name">Auðvelt</span>
+            <span class="difficulty-desc">Lárétt og lóðrétt</span>
+          </span>
+        </label>
+        <label>
+          <input type="radio" name="difficulty" value="medium" checked />
+          <span class="difficulty-text">
+            <span class="difficulty-name">Miðlungs</span>
+            <span class="difficulty-desc">Líka á ská</span>
+          </span>
+        </label>
+        <label>
+          <input type="radio" name="difficulty" value="hard" />
+          <span class="difficulty-text">
+            <span class="difficulty-name">Erfitt</span>
+            <span class="difficulty-desc">Allar áttir, líka aftur á bak</span>
+          </span>
+        </label>
+      </fieldset>
+
+      <div class="actions">
+        <button type="submit" id="generate">Búa til</button>
+        <button type="button" id="sample" class="secondary">Setja inn dæmi</button>
+      </div>
+    </form>
+
+    <section id="result" hidden aria-live="polite">
+      <h2>Tilbúið</h2>
+      <div class="downloads">
+        <a id="dl-puzzle" download="ordarugl.pdf" class="button">Sækja orðarugl (PDF)</a>
+        <a id="dl-solution" download="ordarugl-lausn.pdf" class="button secondary">Sækja lausn (PDF)</a>
+      </div>
+      <p id="meta" class="meta"></p>
+      <p id="warnings" class="warnings" hidden></p>
+    </section>
+
+    <section id="errors" hidden aria-live="assertive" class="errors"></section>
+
+    <footer>
+      <p>Orðin þín fara aldrei af tölvunni þinni — PDF er búið til í vafranum.</p>
+    </footer>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

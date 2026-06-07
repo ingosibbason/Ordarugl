@@ -7,7 +7,10 @@ import argparse
 import math
 import random
 import sys
+from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
+from typing import NamedTuple
 
 from reportlab.lib.colors import HexColor, black, white
 from reportlab.lib.pagesizes import A4
@@ -15,8 +18,15 @@ from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
 
-# Full Icelandic uppercase alphabet (32 letters).
-ALPHABET = list("AÁBDÐEÉFGHIÍJKLMNOÓPRSTUÚVXYÝÞÆÖ")
+class OrdaruglInputError(ValueError):
+    """User-input error suitable for showing to an end user.
+
+    Subclasses ValueError so existing callers that catch ValueError keep working.
+    """
+
+
+# Full Icelandic uppercase alphabet (32 letters), plus (C,Q,W,Z) (36 letters)
+ALPHABET = list("AÁBCDÐEÉFGHIÍJKLMNOÓPQRSTUÚVWXYÝZÞÆÖ") 
 ALPHABET_SET = set(ALPHABET)
 ALPHABET_ORDER = {ch: i for i, ch in enumerate(ALPHABET)}
 
@@ -50,17 +60,29 @@ def resolve_directions(no_diagonals: bool, no_backwards: bool) -> list[tuple[int
     return sorted(dirs)
 
 
-def normalize_word(word: str) -> str:
-    """Uppercase and validate against the Icelandic alphabet."""
-    upper = word.strip().upper()
-    if not upper:
-        raise ValueError("empty word")
-    bad = sorted({c for c in upper if c not in ALPHABET_SET})
+class Word(NamedTuple):
+    display: str    # what the user typed (preserved for the word list)
+    placement: str  # uppercase, no spaces/dashes (used to place in the grid)
+
+
+# Characters allowed inside user input but stripped before placement.
+_SEPARATORS = set(" \t -–—")
+
+
+def normalize_word(raw: str) -> Word:
+    """Return display + placement forms of a user-supplied word."""
+    display = " ".join(raw.split())  # trim + collapse internal whitespace
+    if not display:
+        raise OrdaruglInputError("empty word")
+    placement = "".join(c for c in display.upper() if c not in _SEPARATORS)
+    if not placement:
+        raise OrdaruglInputError(f"word {raw!r} has no letters")
+    bad = sorted({c for c in placement if c not in ALPHABET_SET})
     if bad:
-        raise ValueError(
-            f"word {word!r} contains characters not in the Icelandic alphabet: {''.join(bad)}"
+        raise OrdaruglInputError(
+            f"word {raw!r} contains characters not in the Icelandic alphabet: {''.join(bad)}"
         )
-    return upper
+    return Word(display=display, placement=placement)
 
 
 def try_place(grid, word, directions, rng, max_attempts=300):
@@ -133,9 +155,11 @@ LIST_FONT_MIN = 8
 LIST_LINE_RATIO = 1.55  # line height as multiple of font size
 
 
-def render_pdf(out_path, title, grid, word_list, placements=None, highlight=False):
+def render_pdf(out, title, grid, word_list, placements=None, highlight=False):
+    """Render a PDF to `out`, which may be a path-like or a binary file-like object."""
     n = len(grid)  # grid is square
-    c = canvas.Canvas(str(out_path), pagesize=A4)
+    filename = str(out) if isinstance(out, (str, Path)) else out
+    c = canvas.Canvas(filename, pagesize=A4)
 
     # Title bar (top-left blue strip).
     title_h = 14 * mm
@@ -147,52 +171,50 @@ def render_pdf(out_path, title, grid, word_list, placements=None, highlight=Fals
     c.setFillColor(white)
     c.drawString(MARGIN + 6 * mm, title_y + 4.6 * mm, title)
 
-    # --- Layout: maximize both the square grid and the word-list font size ---
+    # --- Layout: the grid is the priority; word list fits in what's left ---
     border_pad = 4 * mm
     gap_after_title = 8 * mm
     gap_before_list = 10 * mm
 
     avail_w_grid = PAGE_W - 2 * MARGIN - 2 * border_pad
-    cell_from_width = avail_w_grid / n
+    cell_from_width = avail_w_grid / n  # grid cell size if width is the limit
 
-    # Word list sizing: 4 columns. Font is the largest that lets the widest
-    # displayed word fit its column comfortably.
+    # Word list parameters (font size determined later, once grid is sized).
     list_col_w = (PAGE_W - 2 * MARGIN) / LIST_COLS
-    displayed = [w[0] + w[1:].lower() if len(w) > 1 else w for w in word_list]
+    # Word list is rendered exactly as supplied (preserves spaces, dashes, casing).
+    displayed = list(word_list)
     longest_display = max((len(d) for d in displayed), default=1)
-    # Helvetica avg char width ≈ 0.55 × font size; leave ~10% padding in column.
     font_from_width = (list_col_w * 0.90) / (longest_display * 0.55)
-    list_font = min(LIST_FONT_MAX, font_from_width)
-    list_line_h = list_font * LIST_LINE_RATIO
+    desired_font = min(LIST_FONT_MAX, font_from_width)
     list_rows = math.ceil(len(word_list) / LIST_COLS) if word_list else 0
-    list_h = list_rows * list_line_h
 
     # Total vertical between title and bottom margin, minus fixed gaps and pads.
     total_v = title_y - MARGIN - gap_after_title - 2 * border_pad - gap_before_list
-    avail_h_grid = total_v - list_h
-    cell_from_height = avail_h_grid / n
 
+    # Step 1: reserve only the *minimum* the word list needs, so the grid
+    # always wins as much vertical space as it can.
+    min_list_h = list_rows * LIST_FONT_MIN * LIST_LINE_RATIO
+    max_grid_h = max(0.0, total_v - min_list_h)
+    cell_from_height = max_grid_h / n if n else 0
     cell = min(cell_from_width, cell_from_height)
-
-    # If the grid was width-constrained, donate the leftover vertical space
-    # to the word-list font (until it hits the per-column width cap).
-    leftover_v = avail_h_grid - cell * n
-    if leftover_v > 0 and list_rows > 0:
-        max_list_h = list_h + leftover_v
-        font_from_height = (max_list_h / list_rows) / LIST_LINE_RATIO
-        list_font = min(LIST_FONT_MAX, font_from_width, font_from_height)
-        list_line_h = list_font * LIST_LINE_RATIO
-
-    if list_font < LIST_FONT_MIN:
-        list_font = LIST_FONT_MIN
-        list_line_h = list_font * LIST_LINE_RATIO
-
     grid_side = cell * n
+
+    # Step 2: word list expands into the leftover, capped by what looks good.
+    remaining_v = total_v - grid_side
+    desired_list_h = list_rows * desired_font * LIST_LINE_RATIO
+    actual_list_h = min(remaining_v, desired_list_h)
+    if list_rows > 0:
+        list_font = (actual_list_h / list_rows) / LIST_LINE_RATIO
+        list_font = max(LIST_FONT_MIN, min(LIST_FONT_MAX, font_from_width, list_font))
+    else:
+        list_font = LIST_FONT_MIN
+    list_line_h = list_font * LIST_LINE_RATIO
+    list_h = list_rows * list_line_h
+
     grid_x = (PAGE_W - grid_side) / 2
     grid_y = title_y - gap_after_title - border_pad - grid_side
 
-    # Distribute any unused vertical (grid was width-constrained) by pushing
-    # the word list down so it sits closer to the bottom margin.
+    # Push the list toward the bottom margin if there's still slack.
     used_v = grid_side + list_h
     extra_v = max(0.0, total_v - used_v)
     list_gap = gap_before_list + extra_v
@@ -255,26 +277,126 @@ def render_pdf(out_path, title, grid, word_list, placements=None, highlight=Fals
     c.save()
 
 
+# ---------- Library API ----------
+
+@dataclass
+class PuzzleResult:
+    """Output of `generate()` — two PDFs in memory plus metadata.
+
+    Both PDF buffers are rewound to position 0, ready to be served or written.
+    """
+    puzzle_pdf: BytesIO
+    solution_pdf: BytesIO
+    requested_size: int
+    final_size: int
+    placed_words: list[str]    # display forms, Icelandic-sorted
+    dropped_words: list[str]   # display forms of words that could not be placed
+
+
+def generate(
+    raw_words: list[str],
+    *,
+    title: str = "Orðarugl",
+    difficulty: str = "medium",
+    no_diagonals: bool = False,
+    no_backwards: bool = False,
+    size: int | None = None,
+    seed: int | None = None,
+) -> PuzzleResult:
+    """Generate puzzle + solution PDFs from a list of raw word strings.
+
+    Raises OrdaruglInputError on user-input problems (empty list, bad characters,
+    word too long for grid, no directions enabled).
+    """
+    if not raw_words:
+        raise OrdaruglInputError("no words supplied")
+    if difficulty not in ("easy", "medium", "hard"):
+        raise OrdaruglInputError(f"unknown difficulty {difficulty!r}")
+
+    entries = [normalize_word(w) for w in raw_words]  # may raise OrdaruglInputError
+    placements_words = [e.placement for e in entries]
+
+    no_diag = no_diagonals or difficulty == "easy"
+    no_back = no_backwards or difficulty in ("easy", "medium")
+    directions = resolve_directions(no_diag, no_back)
+    if not directions:
+        raise OrdaruglInputError("no directions enabled — relax the difficulty flags")
+
+    rng = random.Random(seed)
+
+    longest = max(len(w) for w in placements_words)
+    total_letters = sum(len(w) for w in placements_words)
+    default_n = max(longest, math.ceil(math.sqrt(total_letters * 1.8)), 12)
+
+    if size is not None:
+        n = size
+        user_fixed = True
+    else:
+        n = default_n
+        user_fixed = False
+
+    if longest > n:
+        raise OrdaruglInputError(
+            f"longest word ({longest} letters) doesn't fit in a {n}x{n} grid"
+        )
+
+    requested_n = n
+    grid, placements, dropped, final_n = build_puzzle(
+        placements_words, n, directions, rng, grow=not user_fixed
+    )
+
+    # Filler alphabet: only letters that already appear in input words (spec).
+    used_letters = sorted({ch for w in placements_words for ch in w})
+    fill_grid(grid, used_letters, rng)
+
+    sorted_entries = sorted(entries, key=lambda e: icelandic_sort_key(e.placement))
+    placed_entries = [e for e in sorted_entries if e.placement in placements]
+    place_to_display = {e.placement: e.display for e in entries}
+    dropped_display = [place_to_display.get(p, p) for p in dropped]
+
+    puzzle_buf = BytesIO()
+    solution_buf = BytesIO()
+    render_pdf(
+        puzzle_buf, title, grid,
+        [e.display for e in sorted_entries],
+        placements=placements, highlight=False,
+    )
+    render_pdf(
+        solution_buf, f"{title} — Lausn", grid,
+        [e.display for e in placed_entries],
+        placements=placements, highlight=True,
+    )
+    puzzle_buf.seek(0)
+    solution_buf.seek(0)
+
+    return PuzzleResult(
+        puzzle_pdf=puzzle_buf,
+        solution_pdf=solution_buf,
+        requested_size=requested_n,
+        final_size=final_n,
+        placed_words=[e.display for e in placed_entries],
+        dropped_words=dropped_display,
+    )
+
+
 # ---------- CLI ----------
 
-def parse_words(args) -> list[str]:
+def read_words_from_args(args) -> list[str]:
+    """Return raw word strings from --words or --words-file."""
     if args.words:
         raw = [w for w in args.words.split(",") if w.strip()]
     else:
         path = Path(args.words_file)
         if not path.exists():
-            sys.exit(f"words file not found: {path}")
+            raise OrdaruglInputError(f"words file not found: {path}")
         raw = []
         for line in path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if line and not line.startswith("#"):
                 raw.append(line)
     if not raw:
-        sys.exit("no words supplied")
-    try:
-        return [normalize_word(w) for w in raw]
-    except ValueError as e:
-        sys.exit(str(e))
+        raise OrdaruglInputError("no words supplied")
+    return raw
 
 
 def main(argv=None) -> int:
@@ -302,73 +424,54 @@ def main(argv=None) -> int:
     p.add_argument("--seed", type=int, help="random seed for reproducible puzzles")
 
     args = p.parse_args(argv)
-    words = parse_words(args)
 
-    # Difficulty preset combined with explicit flags (more restrictive wins).
-    no_diag = args.no_diagonals or args.difficulty == "easy"
-    no_back = args.no_backwards or args.difficulty in ("easy", "medium")
-    directions = resolve_directions(no_diag, no_back)
-    if not directions:
-        sys.exit("no directions enabled — relax the difficulty flags")
-
-    rng = random.Random(args.seed)
-
-    longest = max(len(w) for w in words)
-    total_letters = sum(len(w) for w in words)
-    default_n = max(longest, math.ceil(math.sqrt(total_letters * 1.8)), 12)
-
+    # Flatten --size / --cols / --rows into a single size (grid is square).
     user_sizes = [s for s in (args.size, args.cols, args.rows) if s is not None]
     if user_sizes:
-        n = max(user_sizes)
+        size = max(user_sizes)
         if len(set(user_sizes)) > 1:
             print(
-                f"Note: grid is square — using {n} (the largest of the supplied sizes).",
+                f"Note: grid is square — using {size} (the largest of the supplied sizes).",
                 file=sys.stderr,
             )
-        user_fixed = True
     else:
-        n = default_n
-        user_fixed = False
+        size = None
 
-    if longest > n:
-        sys.exit(f"longest word ({longest} letters) doesn't fit in a {n}x{n} grid")
+    try:
+        raw_words = read_words_from_args(args)
+        result = generate(
+            raw_words,
+            title=args.title,
+            difficulty=args.difficulty,
+            no_diagonals=args.no_diagonals,
+            no_backwards=args.no_backwards,
+            size=size,
+            seed=args.seed,
+        )
+    except OrdaruglInputError as e:
+        sys.exit(str(e))
 
-    grid, placements, dropped, final_n = build_puzzle(
-        words, n, directions, rng, grow=not user_fixed
-    )
-    if final_n != n:
+    if result.final_size != result.requested_size:
         print(
-            f"Grew grid from {n}x{n} to {final_n}x{final_n} to fit all words.",
+            f"Grew grid from {result.requested_size}x{result.requested_size} "
+            f"to {result.final_size}x{result.final_size} to fit all words.",
             file=sys.stderr,
         )
-    if dropped:
+    if result.dropped_words:
         print(
-            f"Warning: could not place {len(dropped)} word(s): {', '.join(dropped)}",
+            f"Warning: could not place {len(result.dropped_words)} word(s): "
+            f"{', '.join(result.dropped_words)}",
             file=sys.stderr,
         )
-
-    # Filler alphabet: only letters that already appear in input words (spec).
-    used_letters = sorted({ch for w in words for ch in w})
-    fill_grid(grid, used_letters, rng)
 
     out_path = Path(args.out)
     sol_path = out_path.with_name(out_path.stem + "-solution" + out_path.suffix)
-
-    sorted_words = sorted(words, key=icelandic_sort_key)
-    placed_sorted = [w for w in sorted_words if w in placements]
-    render_pdf(out_path, args.title, grid, sorted_words, placements=placements, highlight=False)
-    render_pdf(
-        sol_path,
-        f"{args.title} — Lausn",
-        grid,
-        placed_sorted,
-        placements=placements,
-        highlight=True,
-    )
+    out_path.write_bytes(result.puzzle_pdf.getvalue())
+    sol_path.write_bytes(result.solution_pdf.getvalue())
 
     print(f"Wrote {out_path}")
     print(f"Wrote {sol_path}")
-    return 1 if dropped else 0
+    return 1 if result.dropped_words else 0
 
 
 if __name__ == "__main__":

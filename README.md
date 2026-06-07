@@ -1,7 +1,8 @@
 # Orðarugl
 
-A small CLI that generates printable Icelandic word search puzzles ("orðarugl")
-as A4 PDFs. Pure-vector output, sharp at any print size, no headless browser.
+A small tool for generating printable Icelandic word search puzzles
+("orðarugl") as A4 PDFs — usable as a CLI, a Python library, or a client-side
+web app. Pure-vector output, sharp at any print size.
 
 ![Example puzzle](examples/puzzle.pdf)
 
@@ -13,6 +14,7 @@ as A4 PDFs. Pure-vector output, sharp at any print size, no headless browser.
 - Filler letters drawn only from the letters that already appear in your word list — no giveaway letters
 - Generates **two** PDFs every run: the puzzle, and a solution PDF with the placed words highlighted
 - Reproducible output with `--seed`
+- Three interfaces from the same codebase: **CLI**, a **Python library** (`from ordarugl import generate`), and a **static web app** under [`web/`](web/) that runs entirely in the browser
 
 ## Install
 
@@ -77,6 +79,69 @@ Hard puzzle, all 8 directions, fixed grid size, reproducible:
 ```bash
 python ordarugl.py --words-file words.txt --difficulty hard --cols 18 --rows 20 --seed 7 --out hard.pdf
 ```
+
+## Use as a Python library
+
+The CLI is a thin wrapper around a top-level `generate()` function. You can
+call it directly and get both PDFs back as in-memory `BytesIO` buffers — handy
+for wiring the generator into a web framework (Flask, FastAPI, …) or a larger
+pipeline.
+
+```python
+from ordarugl import generate, OrdaruglInputError
+
+try:
+    result = generate(
+        ["REYKJAVÍK", "HRAUN", "JÖKULL", "GEYSIR"],
+        title="Mín orð",
+        difficulty="medium",
+        seed=42,
+    )
+except OrdaruglInputError as e:
+    # User-input problem (empty list, non-Icelandic letter, word too long, …).
+    print(f"Bad input: {e}")
+else:
+    with open("puzzle.pdf", "wb") as f:
+        f.write(result.puzzle_pdf.getvalue())
+    with open("puzzle-solution.pdf", "wb") as f:
+        f.write(result.solution_pdf.getvalue())
+    print(f"Placed {len(result.placed_words)} word(s) in a "
+          f"{result.final_size}×{result.final_size} grid.")
+    if result.dropped_words:
+        print(f"Could not place: {result.dropped_words}")
+```
+
+The returned `PuzzleResult` exposes:
+
+| Field            | Type          | Meaning                                                    |
+| ---------------- | ------------- | ---------------------------------------------------------- |
+| `puzzle_pdf`     | `BytesIO`     | The puzzle PDF, rewound to position 0.                     |
+| `solution_pdf`   | `BytesIO`     | The solution PDF (placed words highlighted), rewound.      |
+| `requested_size` | `int`         | Grid side originally asked for.                            |
+| `final_size`     | `int`         | Grid side actually used (may have grown to fit all words). |
+| `placed_words`   | `list[str]`   | Display forms of words that landed in the grid.            |
+| `dropped_words`  | `list[str]`   | Display forms of words that could not be placed.           |
+
+## Run as a website
+
+A small client-side single-page app under [`web/`](web/) ports the puzzle
+generator and PDF renderer to JavaScript. No backend required — everything
+runs in the browser, and the word list never leaves the user's machine.
+
+To run it locally:
+
+```bash
+python3 -m http.server 8765 --directory web
+```
+
+Then open `http://localhost:8765/` and you can paste a word list, pick a
+difficulty, and download puzzle + solution PDFs.
+
+Implementation notes:
+
+- Pure ES modules; PDF generation uses [jsPDF](https://github.com/parallax/jsPDF) loaded from the jsdelivr CDN.
+- Must be served over `http://` (not opened as `file://`) because of ES module imports.
+- The Python implementation in [`ordarugl.py`](ordarugl.py) remains the reference; the JS port mirrors its placement algorithm and PDF layout.
 
 ## How it works
 

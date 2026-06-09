@@ -26,6 +26,12 @@
         <span id="word-count" class="word-count" aria-live="polite">0 orð</span>
       </label>
 
+      <label class="field">
+        <span class="label">Stærð grindar <span class="muted">(valfrjálst — sjálfvirkt ef tómt)</span></span>
+        <input type="number" id="size" name="size" min="5" max="30" step="1"
+               inputmode="numeric" autocomplete="off" placeholder="sjálfvirkt" />
+      </label>
+
       <fieldset class="field difficulty">
         <legend class="label">Erfiðleiki</legend>
         <label>
@@ -59,6 +65,19 @@
 
     <section id="result" hidden aria-live="polite">
       <h2>Tilbúið</h2>
+
+      <div class="preview">
+        <label class="solution-toggle">
+          <input type="checkbox" id="show-solution" />
+          <span>Sýna lausn</span>
+        </label>
+        <div class="preview-wrapper" id="preview-wrapper">
+          <div class="preview-grid" id="preview-grid">
+            <svg class="preview-overlay" id="preview-overlay" aria-hidden="true"></svg>
+          </div>
+        </div>
+      </div>
+
       <div class="downloads">
         <a id="dl-puzzle" download="ordarugl.pdf" class="button">Sækja orðarugl (PDF)</a>
         <a id="dl-solution" download="ordarugl-lausn.pdf" class="button secondary">Sækja lausn (PDF)</a>

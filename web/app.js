@@ -24,6 +24,7 @@ const $ = (sel) => document.querySelector(sel);
 const form = $("#form");
 const wordsEl = $("#words");
 const titleEl = $("#title");
+const sizeEl = $("#size");
 const generateBtn = $("#generate");
 const sampleBtn = $("#sample");
 const resultEl = $("#result");
@@ -33,6 +34,46 @@ const metaEl = $("#meta");
 const warningsEl = $("#warnings");
 const errorsEl = $("#errors");
 const wordCountEl = $("#word-count");
+const previewWrapperEl = $("#preview-wrapper");
+const previewGridEl = $("#preview-grid");
+const previewOverlayEl = $("#preview-overlay");
+const showSolutionEl = $("#show-solution");
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function renderPreview(result) {
+  const n = result.grid.length;
+
+  previewGridEl.style.setProperty("--grid-n", n);
+  previewGridEl.style.gridTemplateColumns = `repeat(${n}, 1fr)`;
+  previewGridEl.style.gridTemplateRows = `repeat(${n}, 1fr)`;
+  previewGridEl.replaceChildren(previewOverlayEl);
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      const div = document.createElement("div");
+      div.className = "preview-cell";
+      div.textContent = result.grid[r][c];
+      previewGridEl.appendChild(div);
+    }
+  }
+
+  previewOverlayEl.setAttribute("viewBox", `0 0 ${n} ${n}`);
+  previewOverlayEl.setAttribute("preserveAspectRatio", "none");
+  previewOverlayEl.replaceChildren();
+  for (const positions of result.placements.values()) {
+    const [r0, c0] = positions[0];
+    const [r1, c1] = positions[positions.length - 1];
+    const line = document.createElementNS(SVG_NS, "line");
+    line.setAttribute("x1", c0 + 0.5);
+    line.setAttribute("y1", r0 + 0.5);
+    line.setAttribute("x2", c1 + 0.5);
+    line.setAttribute("y2", r1 + 0.5);
+    previewOverlayEl.appendChild(line);
+  }
+
+  showSolutionEl.checked = false;
+  previewWrapperEl.classList.remove("show-solution");
+}
 
 let lastPuzzleUrl = null;
 let lastSolutionUrl = null;
@@ -89,6 +130,21 @@ async function handleGenerate(event) {
   const titleValue = titleEl.value.trim() || "Orðarugl";
   const difficulty = getDifficulty();
 
+  const sizeRaw = sizeEl.value.trim();
+  let size = null;
+  if (sizeRaw) {
+    const parsed = parseInt(sizeRaw, 10);
+    if (!Number.isFinite(parsed) || parsed < 5) {
+      showError("Stærð grindar verður að vera að minnsta kosti 5.");
+      return;
+    }
+    if (parsed > MAX_GRID_SIDE) {
+      showError(`Hámarksstærð grindar er ${MAX_GRID_SIDE}×${MAX_GRID_SIDE}.`);
+      return;
+    }
+    size = parsed;
+  }
+
   generateBtn.disabled = true;
   generateBtn.textContent = "Bý til…";
 
@@ -96,12 +152,14 @@ async function handleGenerate(event) {
     // Let the browser paint the disabled state before the (synchronous) work runs.
     await new Promise((r) => requestAnimationFrame(() => r()));
 
-    const result = buildResult(rawWords, { difficulty });
+    const result = buildResult(rawWords, { difficulty, size });
 
     if (result.finalSize > MAX_GRID_SIDE) {
       showError(`Stafagrindin þurfti að verða ${result.finalSize}×${result.finalSize} til að rúma orðin — það er meira en hámarkið (${MAX_GRID_SIDE}×${MAX_GRID_SIDE}). Fjarlægðu nokkur orð og reyndu aftur.`);
       return;
     }
+
+    renderPreview(result);
 
     const { puzzleBlob, solutionBlob } = renderTwoPdfs(result, titleValue);
 
@@ -158,6 +216,9 @@ function updateWordCount() {
 form.addEventListener("submit", handleGenerate);
 sampleBtn.addEventListener("click", handleSample);
 wordsEl.addEventListener("input", updateWordCount);
+showSolutionEl.addEventListener("change", () => {
+  previewWrapperEl.classList.toggle("show-solution", showSolutionEl.checked);
+});
 window.addEventListener("beforeunload", revokeLastUrls);
 
 updateWordCount();

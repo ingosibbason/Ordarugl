@@ -39,7 +39,43 @@ const previewGridEl = $("#preview-grid");
 const previewOverlayEl = $("#preview-overlay");
 const showSolutionEl = $("#show-solution");
 
+const themeToggleEl = $("#theme-toggle");
+
 const SVG_NS = "http://www.w3.org/2000/svg";
+
+const THEME_KEY = "ordarugl-theme";
+const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+
+function readStoredTheme() {
+  try {
+    const stored = localStorage.getItem(THEME_KEY);
+    return stored === "dark" || stored === "light" ? stored : null;
+  } catch {
+    return null; // private mode / storage disabled
+  }
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  const dark = theme === "dark";
+  const label = dark ? "Skipta yfir í ljóst þema" : "Skipta yfir í dökkt þema";
+  themeToggleEl.setAttribute("aria-pressed", String(dark));
+  themeToggleEl.setAttribute("aria-label", label);
+  themeToggleEl.title = label;
+}
+
+function toggleTheme() {
+  const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+  try {
+    localStorage.setItem(THEME_KEY, next);
+  } catch { /* preference just won't persist */ }
+  applyTheme(next);
+}
+
+// Follow the system setting until the visitor picks a theme themselves.
+darkQuery.addEventListener("change", (event) => {
+  if (readStoredTheme() === null) applyTheme(event.matches ? "dark" : "light");
+});
 
 function renderPreview(result) {
   const n = result.grid.length;
@@ -213,6 +249,7 @@ function updateWordCount() {
   wordCountEl.classList.toggle("over", count > MAX_WORDS);
 }
 
+themeToggleEl.addEventListener("click", toggleTheme);
 form.addEventListener("submit", handleGenerate);
 sampleBtn.addEventListener("click", handleSample);
 wordsEl.addEventListener("input", updateWordCount);
@@ -221,4 +258,5 @@ showSolutionEl.addEventListener("change", () => {
 });
 window.addEventListener("beforeunload", revokeLastUrls);
 
+applyTheme(readStoredTheme() ?? (darkQuery.matches ? "dark" : "light"));
 updateWordCount();

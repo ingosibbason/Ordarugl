@@ -1,17 +1,48 @@
-:root {
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
   --bg: #f5f4ef;
   --fg: #1c1c1c;
   --muted: #6b6b6b;
   --accent: #2e73b8;
   --accent-fg: #ffffff;
   --secondary: #e8e6df;
+  --surface: #ffffff;
   --warn: #8a5a00;
   --warn-bg: #fff4dc;
   --error: #8a1c1c;
   --error-bg: #fde2e2;
   --border: #d6d2c4;
+  --hover-brightness: 0.95;
+  --preview-bg: #ffffff;
+  --preview-fg: #000000;
+  --preview-border: #4a4a4a;
+  --solution-line: #ffd93d;
   --radius: 10px;
   --max-width: 680px;
+}
+
+/* Dark tokens. The theme is resolved to an explicit data-theme value by the
+   inline script in index.html (stored choice, otherwise the system setting). */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #14161a;
+  --fg: #ececea;
+  --muted: #a3a49f;
+  --accent: #5aa2e0;
+  --accent-fg: #0d1117;
+  --secondary: #2a2e35;
+  --surface: #1c1f24;
+  --warn: #f0c674;
+  --warn-bg: #38301a;
+  --error: #ffa3a3;
+  --error-bg: #402221;
+  --border: #333941;
+  --hover-brightness: 1.12;
+  --preview-bg: #16181c;
+  --preview-fg: #f2f2f0;
+  --preview-border: #5a626c;
+  --solution-line: #ffd93d;
 }
 
 * {
@@ -26,6 +57,7 @@ html, body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-size: 16px;
   line-height: 1.45;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 main {
@@ -35,7 +67,43 @@ main {
 }
 
 header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
   margin-bottom: 24px;
+}
+
+.header-text {
+  min-width: 0;
+}
+
+.theme-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.theme-toggle svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+/* Show the icon for the theme you would switch to. */
+:root[data-theme="dark"] .theme-toggle .icon-moon,
+:root:not([data-theme="dark"]) .theme-toggle .icon-sun {
+  display: none;
 }
 
 h1 {
@@ -91,7 +159,7 @@ textarea {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: #fff;
+  background: var(--surface);
   font-family: inherit;
   font-size: 1rem;
   color: var(--fg);
@@ -122,7 +190,7 @@ fieldset.difficulty {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 10px 14px 12px;
-  background: #fff;
+  background: var(--surface);
 }
 
 fieldset.difficulty legend {
@@ -184,7 +252,7 @@ button.secondary,
 
 button:hover,
 .button:hover {
-  filter: brightness(0.95);
+  filter: brightness(var(--hover-brightness));
 }
 
 button:focus-visible,
@@ -203,7 +271,7 @@ button:disabled {
   padding: 18px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: #fff;
+  background: var(--surface);
 }
 
 #result h2 {
@@ -233,8 +301,8 @@ button:disabled {
   margin: 0 auto;
   padding: 6px;
   box-sizing: border-box;
-  border: 2px dashed #4a4a4a;
-  background: #fff;
+  border: 2px dashed var(--preview-border);
+  background: var(--preview-bg);
 }
 
 .preview-grid {
@@ -252,7 +320,7 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #000;
+  color: var(--preview-fg);
   font-family: Helvetica, Arial, sans-serif;
   font-weight: 700;
   line-height: 1;
@@ -275,7 +343,7 @@ button:disabled {
 }
 
 .preview-overlay line {
-  stroke: #FFD93D;
+  stroke: var(--solution-line);
   stroke-width: 0.72;
   stroke-linecap: round;
 }

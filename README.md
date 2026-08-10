@@ -148,7 +148,17 @@ Implementation notes:
 1. Words are normalized to uppercase and validated against the Icelandic alphabet
    — any character outside it is a hard error.
 2. Words are sorted longest-first and placed at random positions/directions,
-   allowed to overlap on matching letters. Up to 300 placement attempts per word.
+   allowed to cross on matching letters. Up to 300 placement attempts per word.
+   Two placement rules keep crossings readable:
+   - A word may not start or end on the start or end letter of a word running
+     along the same line — `MÚR` + `RÚMFÖT` sharing the `R` would read
+     `MÚRÚMFÖT`. Crossing that same `R` from another direction is fine, so
+     `MÚR` running down into a horizontal `RÚMFÖT` is allowed.
+   - Neither word may sit entirely inside another word's letters, so `RÚM` is
+     never placed on three of `RÚMFÖT`'s cells.
+
+   Opposite directions count as the same line (E/W, N/S, NE/SW, NW/SE), since
+   the letters run together either way.
 3. If any words don't fit, the grid grows by 1 row + 1 column and the whole
    pack is retried, up to 20 times. Any words still unplaceable are reported.
 4. Remaining cells are filled with random letters drawn from the set of letters

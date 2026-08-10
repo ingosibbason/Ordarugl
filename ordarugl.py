@@ -85,7 +85,44 @@ def normalize_word(raw: str) -> Word:
     return Word(display=display, placement=placement)
 
 
-def try_place(grid, word, directions, rng, max_attempts=300):
+class Placed(NamedTuple):
+    """A word already on the grid, in the form the placement rules need."""
+    axis: tuple[int, int]
+    ends: frozenset[tuple[int, int]]   # its first and last cell
+    cells: frozenset[tuple[int, int]]
+
+
+def axis_of(dr: int, dc: int) -> tuple[int, int]:
+    """Direction with the sign normalized: E/W, S/N, SE/NW and NE/SW pair up.
+
+    Two words sharing an axis lie along the same line, so their letters would run
+    together in the grid — that is what "the same direction" means for the
+    placement rules below.
+    """
+    if dr < 0 or (dr == 0 and dc < 0):
+        return (-dr, -dc)
+    return (dr, dc)
+
+
+def breaks_rules(cells, axis, placed: list[Placed]) -> bool:
+    """True if this candidate placement would break one of the placement rules.
+
+    1. A word may not start or end on the start or end letter of a word running
+       along the same axis (MÚR + RÚMFÖT sharing the R would read MÚRÚMFÖT).
+       Crossing the same letter in another direction is fine.
+    2. Neither word may sit entirely inside the other (RÚM hiding in RÚMFÖT).
+    """
+    cell_set = frozenset(cells)
+    ends = {cells[0], cells[-1]}
+    for p in placed:
+        if p.axis == axis and (ends & p.ends):
+            return True
+        if cell_set <= p.cells or p.cells <= cell_set:
+            return True
+    return False
+
+
+def try_place(grid, word, directions, rng, placed=(), max_attempts=300):
     rows, cols = len(grid), len(grid[0])
     n = len(word)
     for _ in range(max_attempts):
@@ -107,10 +144,14 @@ def try_place(grid, word, directions, rng, max_attempts=300):
         r = rng.randint(r_lo, r_hi)
         c = rng.randint(c_lo, c_hi)
         cells = [(r + dr * i, c + dc * i) for i in range(n)]
-        if all(grid[pr][pc] in (None, word[i]) for i, (pr, pc) in enumerate(cells)):
-            for i, (pr, pc) in enumerate(cells):
-                grid[pr][pc] = word[i]
-            return cells
+        if not all(grid[pr][pc] in (None, word[i]) for i, (pr, pc) in enumerate(cells)):
+            continue
+        axis = axis_of(dr, dc)
+        if breaks_rules(cells, axis, placed):
+            continue
+        for i, (pr, pc) in enumerate(cells):
+            grid[pr][pc] = word[i]
+        return cells, axis
     return None
 
 
@@ -120,13 +161,18 @@ def build_puzzle(words, n, directions, rng, grow=True, max_grows=20):
     for _ in range(max_grows if grow else 1):
         grid = [[None] * n for _ in range(n)]
         placements: dict[str, list[tuple[int, int]]] = {}
+        placed: list[Placed] = []
         dropped: list[str] = []
         for word in words:
-            pos = try_place(grid, word, directions, rng)
+            pos = try_place(grid, word, directions, rng, placed)
             if pos is None:
                 dropped.append(word)
             else:
-                placements[word] = pos
+                cells, axis = pos
+                placements[word] = cells
+                placed.append(
+                    Placed(axis, frozenset({cells[0], cells[-1]}), frozenset(cells))
+                )
         if not dropped:
             return grid, placements, [], n
         if not grow:

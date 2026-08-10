@@ -106,7 +106,41 @@ function pick(rng, arr) {
   return arr[Math.floor(rng() * arr.length)];
 }
 
-function tryPlace(grid, word, directions, rng, maxAttempts = 300) {
+// Direction with the sign normalized: E/W, S/N, SE/NW and NE/SW pair up.
+// Two words sharing an axis lie along the same line, so their letters would run
+// together in the grid — that is what "the same direction" means for the
+// placement rules in breaksRules().
+function axisOf(dr, dc) {
+  if (dr < 0 || (dr === 0 && dc < 0)) return `${-dr},${-dc}`;
+  return `${dr},${dc}`;
+}
+
+const cellKey = (r, c) => `${r},${c}`;
+
+function isSubset(a, b) {
+  for (const v of a) {
+    if (!b.has(v)) return false;
+  }
+  return true;
+}
+
+// True if this candidate placement would break one of the placement rules:
+//   1. A word may not start or end on the start or end letter of a word running
+//      along the same axis (MÚR + RÚMFÖT sharing the R would read MÚRÚMFÖT).
+//      Crossing the same letter in another direction is fine.
+//   2. Neither word may sit entirely inside the other (RÚM hiding in RÚMFÖT).
+function breaksRules(cells, axis, placed) {
+  const cellSet = new Set(cells.map(([r, c]) => cellKey(r, c)));
+  const startKey = cellKey(cells[0][0], cells[0][1]);
+  const endKey = cellKey(cells[cells.length - 1][0], cells[cells.length - 1][1]);
+  for (const p of placed) {
+    if (p.axis === axis && (p.ends.has(startKey) || p.ends.has(endKey))) return true;
+    if (isSubset(cellSet, p.cells) || isSubset(p.cells, cellSet)) return true;
+  }
+  return false;
+}
+
+function tryPlace(grid, word, directions, rng, placed = [], maxAttempts = 300) {
   const rows = grid.length;
   const cols = grid[0].length;
   const n = word.length;
@@ -130,12 +164,14 @@ function tryPlace(grid, word, directions, rng, maxAttempts = 300) {
     if (!ok) continue;
     const cells = [];
     for (let i = 0; i < n; i++) {
-      const pr = r + dr * i;
-      const pc = c + dc * i;
-      grid[pr][pc] = word[i];
-      cells.push([pr, pc]);
+      cells.push([r + dr * i, c + dc * i]);
     }
-    return cells;
+    const axis = axisOf(dr, dc);
+    if (breaksRules(cells, axis, placed)) continue;
+    for (let i = 0; i < n; i++) {
+      grid[cells[i][0]][cells[i][1]] = word[i];
+    }
+    return { cells, axis };
   }
   return null;
 }
@@ -148,37 +184,41 @@ function emptyGrid(n) {
   return g;
 }
 
+function packWords(sorted, size, directions, rng) {
+  const grid = emptyGrid(size);
+  const placements = new Map();
+  const placed = [];
+  const dropped = [];
+  for (const w of sorted) {
+    const pos = tryPlace(grid, w, directions, rng, placed);
+    if (pos === null) {
+      dropped.push(w);
+      continue;
+    }
+    placements.set(w, pos.cells);
+    const [firstR, firstC] = pos.cells[0];
+    const [lastR, lastC] = pos.cells[pos.cells.length - 1];
+    placed.push({
+      axis: pos.axis,
+      ends: new Set([cellKey(firstR, firstC), cellKey(lastR, lastC)]),
+      cells: new Set(pos.cells.map(([r, c]) => cellKey(r, c))),
+    });
+  }
+  return { grid, placements, dropped, size };
+}
+
 function buildPuzzle(words, n, directions, rng, grow = true, maxGrows = 20) {
   // Place words on a square n×n grid, optionally growing until everything fits.
   const sorted = [...words].sort((a, b) => b.length - a.length);
   let size = n;
+  let result = null;
   for (let attempt = 0; attempt < (grow ? maxGrows : 1); attempt++) {
-    const grid = emptyGrid(size);
-    const placements = new Map();
-    const dropped = [];
-    for (const w of sorted) {
-      const pos = tryPlace(grid, w, directions, rng);
-      if (pos === null) dropped.push(w);
-      else placements.set(w, pos);
-    }
-    if (dropped.length === 0) {
-      return { grid, placements, dropped: [], size };
-    }
-    if (!grow) {
-      return { grid, placements, dropped, size };
-    }
+    result = packWords(sorted, size, directions, rng);
+    if (result.dropped.length === 0 || !grow) return result;
     size += 1;
   }
-  // Last attempt's state is the best we have.
-  const grid = emptyGrid(size);
-  const placements = new Map();
-  const dropped = [];
-  for (const w of sorted) {
-    const pos = tryPlace(grid, w, directions, rng);
-    if (pos === null) dropped.push(w);
-    else placements.set(w, pos);
-  }
-  return { grid, placements, dropped, size };
+  // Nothing fit cleanly within maxGrows — one last try at the largest size.
+  return packWords(sorted, size, directions, rng);
 }
 
 function fillGrid(grid, lettersPool, rng) {
